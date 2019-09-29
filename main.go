@@ -21,36 +21,35 @@ const (
     redditUsername =     "CrossStitchBot"
     redditPassword =     "SECRET" // SECRET PASSWORD. DO NOT SHARE PUBLICLY.
 
-    googleSheetId = "1sU7OwYp9kjF0vD1uXIactca6Z_RuD6AYh7g6O5v_CPM"
+    googleCompetitionSheetId = "1sU7OwYp9kjF0vD1uXIactca6Z_RuD6AYh7g6O5v_CPM"
 )
 
-// Summons contestants to a reddit competition post.
-func summonContestants(session *geddit.OAuthSession, post *geddit.Submission) error {
-    log.Printf("Summoning contestants to post %s!", post.Permalink)
+// Build the contents of the Reddit comment that will summon challenge subscribers.
+func buildSummonString(ctx context.Context) (string, error) {
+    const (
+        usernameIndex =   0 // A
+        subscribedIndex = 1 // B
+    )
 
-    // Create an authenticated client.
-    ctx := context.Background()
+    // Create an authenticated Google Sheets service.
     sheetsService, err := sheets.NewService(ctx,
         option.WithScopes(sheets.SpreadsheetsReadonlyScope),
         option.WithCredentialsFile("crossstitch-bot-1569769426365-1bf5b821811c.json"),
     )
     if err != nil {
         log.Printf("Failed to create Google Sheets service: %v", err)
-        return err
+        return "", err
     }
 
-    // Read and print the usernames from the spreadsheet.
-    const (
-        usernameIndex =   0 // A
-        subscribedIndex = 1 // B
-    )
+    // Read the range of values from the spreadsheet.
     readRange := "Sheet1!A1:B"
-    resp, err := sheetsService.Spreadsheets.Values.Get(googleSheetId, readRange).Do()
+    resp, err := sheetsService.Spreadsheets.Values.Get(googleCompetitionSheetId, readRange).Do()
     if err != nil {
         log.Printf("Unable to retrieve data from Google Sheet: %v", err)
-        return err
+        return "", err
     }
 
+    // Build the summon string.
     text := "Summoning challenge contestants! Paging "
     for i, row := range resp.Values {
         username := row[usernameIndex].(string)
@@ -72,6 +71,21 @@ func summonContestants(session *geddit.OAuthSession, post *geddit.Submission) er
             text = text + username
         }
     }
+    return text, nil
+}
+
+// Summons contestants to a Reddit competition post.
+func summonContestants(session *geddit.OAuthSession, post *geddit.Submission) error {
+    log.Printf("Summoning contestants to post %s!", post.Permalink)
+
+    // Build the summon string from Google Sheets data.
+    ctx := context.Background()
+    text, err := buildSummonString(ctx)
+    if err != nil {
+        return err
+    }
+
+    // Comment on the competition post to summon the subscribed users.
     log.Printf(text)
     _, err = session.Reply(post, text)
     return err
