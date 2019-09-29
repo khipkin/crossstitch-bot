@@ -39,6 +39,10 @@ func summonContestants(session *geddit.OAuthSession, post *geddit.Submission) er
     }
 
     // Read and print the usernames from the spreadsheet.
+    const (
+        usernameIndex =   0 // A
+        subscribedIndex = 1 // B
+    )
     readRange := "Sheet1!A1:B"
     resp, err := sheetsService.Spreadsheets.Values.Get(googleSheetId, readRange).Do()
     if err != nil {
@@ -47,11 +51,17 @@ func summonContestants(session *geddit.OAuthSession, post *geddit.Submission) er
 
     text := "Summoning challenge contestants! Paging "
     for i, row := range resp.Values {
-        // Print columns A and B, which correspond to indices 0 and 1.
-        username := row[0].(string)
-        subscribed, err := strconv.ParseBool(row[1].(string))
+        username := row[usernameIndex].(string)
+        if !strings.HasPrefix(username, "u/") {
+            // Skip rows with invalid usernames.
+            log.Printf("Invalid Reddit username column %d, row %d: '%s'", usernameIndex, i, username)
+            continue
+        }
+        subscribed, err := strconv.ParseBool(row[subscribedIndex].(string))
         if err != nil {
-            log.Fatalf("Invalid Google Sheet data; invalid boolean row %d, column 1: %v", i, row[1])
+            // Skip rows with invalid bools.
+            log.Printf("Invalid boolean column %d, row %d: '%s'", subscribedIndex, i, row[subscribedIndex])
+            continue
         }
         if subscribed {
             if i != 0 {
