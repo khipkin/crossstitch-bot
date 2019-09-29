@@ -35,7 +35,8 @@ func summonContestants(session *geddit.OAuthSession, post *geddit.Submission) er
         option.WithCredentialsFile("crossstitch-bot-1569769426365-1bf5b821811c.json"),
     )
     if err != nil {
-        log.Fatalf("Failed to create Google Sheets service: %v", err)
+        log.Printf("Failed to create Google Sheets service: %v", err)
+        return err
     }
 
     // Read and print the usernames from the spreadsheet.
@@ -46,7 +47,8 @@ func summonContestants(session *geddit.OAuthSession, post *geddit.Submission) er
     readRange := "Sheet1!A1:B"
     resp, err := sheetsService.Spreadsheets.Values.Get(googleSheetId, readRange).Do()
     if err != nil {
-        log.Fatalf("Unable to retrieve data from Google Sheet: %v", err)
+        log.Printf("Unable to retrieve data from Google Sheet: %v", err)
+        return err
     }
 
     text := "Summoning challenge contestants! Paging "
