@@ -6,6 +6,7 @@ import (
     "log"
     "net/http"
     "os"
+    "strconv"
     "strings"
 
     "github.com/jzelinskie/geddit"
@@ -34,26 +35,37 @@ func summonContestants(post *geddit.Submission) error {
         option.WithCredentialsFile("crossstitch-bot-1569769426365-1bf5b821811c.json"),
     )
     if err != nil {
-        log.Fatalf("Failed to create Sheets service: %v", err)
+        log.Fatalf("Failed to create Google Sheets service: %v", err)
     }
 
     // Read and print the usernames from the spreadsheet.
     readRange := "Sheet1!A1:B"
     resp, err := sheetsService.Spreadsheets.Values.Get(googleSheetId, readRange).Do()
     if err != nil {
-        log.Fatalf("Unable to retrieve data from sheet: %v", err)
+        log.Fatalf("Unable to retrieve data from Google Sheet: %v", err)
     }
 
-    log.Printf("*Name*, *Bool*")
-    for _, row := range resp.Values {
-            // Print columns A and B, which correspond to indices 0 and 1.
-            log.Printf("%s, %s", row[0], row[1])
+    text := "Summoning challenge contestants! Paging "
+    for i, row := range resp.Values {
+        // Print columns A and B, which correspond to indices 0 and 1.
+        username := row[0].(string)
+        subscribed, err := strconv.ParseBool(row[1].(string))
+        if err != nil {
+            log.Fatalf("Invalid Google Sheet data; invalid boolean row %d, column 1: %v", i, row[1])
+        }
+        if subscribed {
+            if i != 0 {
+                text += ", "
+            }
+            text = text + username
+        }
     }
+    log.Printf(text)
     return nil
 }
 
 func main() {
-    // Authenticate.
+    // Authenticate with Reddit.
     session, err := geddit.NewOAuthSession(
         redditClientId,
         redditClientSecret,
@@ -61,10 +73,10 @@ func main() {
         "redirect.url",
     )
     if err != nil {
-        log.Fatalf("Failed to create new OAuth session: %v", err)
+        log.Fatalf("Failed to create new Reddit OAuth session: %v", err)
     }
     if err = session.LoginAuth(redditUsername, redditPassword); err != nil {
-        log.Fatalf("Failed to authenticate: %v", err)
+        log.Fatalf("Failed to authenticate with Reddit: %v", err)
     }
 
     // Get r/CrossStitch submissions, sorted by new.
@@ -72,7 +84,7 @@ func main() {
         Limit: 10,
     })
     if err != nil {
-        log.Fatalf("Failed to list recent submissions: %v", err)
+        log.Fatalf("Failed to list recent subreddit submissions: %v", err)
     }
 
     // Check submissions for necessary actions.
@@ -80,7 +92,7 @@ func main() {
         // Check for monthly competition post.
         if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "competition") {
             if err := summonContestants(post); err != nil {
-                log.Fatalf("Failed to summon contestants: %v", err)
+                log.Fatalf("Failed to summon contestants to post %s: %v", post.Permalink, err)
             }
         }
 
