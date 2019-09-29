@@ -46,16 +46,19 @@ func main() {
     }
 
     // Check submissions for necessary actions.
-    for _, post := range submissions {
+    for i, post := range submissions {
         // Check for monthly competition post.
-        if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "Monthly Competition") {
+        if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "competition") {
             if err := summonContestants(post); err != nil {
                 log.Fatalf("Failed to summon contestants: %s", err)
             }
         }
 
         // Add more checks here!
+        log.Printf("Checked post %d: %s", i, post.Title)
     }
+
+    log.Print("DONE")
 
 
 
