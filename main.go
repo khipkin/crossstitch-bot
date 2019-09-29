@@ -11,10 +11,10 @@ import (
 )
 
 const (
-    clientId =     "Kkfhbwt2W5C0Rw"
-    clientSecret = "SECRET" // SECRET PASSWORD. DO NOT SHARE PUBLICLY.
-    username =     "CrossStitchBot"
-    password =     "SECRET" // SECRET PASSWORD. DO NOT SHARE PUBLICLY.
+    redditClientId =     "Kkfhbwt2W5C0Rw"
+    redditClientSecret = "SECRET" // SECRET PASSWORD. DO NOT SHARE PUBLICLY.
+    redditUsername =     "CrossStitchBot"
+    redditPassword =     "SECRET" // SECRET PASSWORD. DO NOT SHARE PUBLICLY.
 )
 
 func summonContestants(post *geddit.Submission) error {
@@ -25,15 +25,15 @@ func summonContestants(post *geddit.Submission) error {
 func main() {
     // Authenticate.
     session, err := geddit.NewOAuthSession(
-        clientId,
-        clientSecret,
+        redditClientId,
+        redditClientSecret,
         "gedditAgent v1",
         "redirect.url",
     )
     if err != nil {
         log.Fatalf("Failed to create new OAuth session: %s", err)
     }
-    if err = session.LoginAuth(username, password); err != nil {
+    if err = session.LoginAuth(redditUsername, redditPassword); err != nil {
         log.Fatalf("Failed to authenticate: %s", err)
     }
 
