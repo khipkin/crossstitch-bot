@@ -25,7 +25,7 @@ const (
 )
 
 // Summons contestants to a reddit competition post.
-func summonContestants(post *geddit.Submission) error {
+func summonContestants(session *geddit.OAuthSession, post *geddit.Submission) error {
     log.Printf("Summoning contestants to post %s!", post.Permalink)
 
     // Create an authenticated client.
@@ -61,7 +61,8 @@ func summonContestants(post *geddit.Submission) error {
         }
     }
     log.Printf(text)
-    return nil
+    _, err = session.Reply(post, text)
+    return err
 }
 
 func main() {
@@ -88,16 +89,15 @@ func main() {
     }
 
     // Check submissions for necessary actions.
-    for i, post := range submissions {
+    for _, post := range submissions {
         // Check for monthly competition post.
         if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "competition") {
-            if err := summonContestants(post); err != nil {
+            if err := summonContestants(session, post); err != nil {
                 log.Fatalf("Failed to summon contestants to post %s: %v", post.Permalink, err)
             }
         }
 
         // Add more checks here!
-        log.Printf("Checked post %d: %s", i, post.Title)
     }
 
     log.Print("DONE")
