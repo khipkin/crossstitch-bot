@@ -22,15 +22,16 @@ const (
     redditUsername =     "CrossStitchBot"
 
     googleCloudProjectId =     "crossstitch-bot-1569769426365"
-    googleCompetitionSheetId = "1sU7OwYp9kjF0vD1uXIactca6Z_RuD6AYh7g6O5v_CPM"
+    googleCompetitionSheetId = "1BgsXzNY1L4cevQllAblDgCffO7DGNp0eOW4Bs1qbiMA"
     googleCredentialsFile =    "crossstitch-bot-1569769426365-8302a8ad5d0d.json"
 )
 
 // Build the contents of the Reddit comment that will summon challenge subscribers.
 func buildSummonString(ctx context.Context) (string, error) {
     const (
-        usernameIndex =   0 // A
-        subscribedIndex = 1 // B
+        lastSubmissionIndex = 0 // A
+        usernameIndex =       2 // C
+        subscribedIndex =     3 // D
     )
 
     // Create an authenticated Google Sheets service.
@@ -44,7 +45,7 @@ func buildSummonString(ctx context.Context) (string, error) {
     }
 
     // Read the range of values from the spreadsheet.
-    readRange := "Sheet1!A1:B"
+    readRange := "LastSubmit!A2:D"
     resp, err := sheetsService.Spreadsheets.Values.Get(googleCompetitionSheetId, readRange).Do()
     if err != nil {
         log.Printf("Unable to retrieve data from Google Sheet: %v", err)
@@ -60,13 +61,19 @@ func buildSummonString(ctx context.Context) (string, error) {
             log.Printf("Invalid Reddit username column %d, row %d: '%s'", usernameIndex, i, username)
             continue
         }
+        lastSubmission, err := strconv.ParseBool(row[lastSubmissionIndex].(string))
+        if err != nil {
+            // Skip rows with invalid bools.
+            log.Printf("Invalid boolean column %d, row %d: '%s'", lastSubmissionIndex, i, row[lastSubmissionIndex])
+            continue
+        }
         subscribed, err := strconv.ParseBool(row[subscribedIndex].(string))
         if err != nil {
             // Skip rows with invalid bools.
             log.Printf("Invalid boolean column %d, row %d: '%s'", subscribedIndex, i, row[subscribedIndex])
             continue
         }
-        if subscribed {
+        if lastSubmission && subscribed {
             if i != 0 {
                 text += ", "
             }
@@ -165,7 +172,7 @@ func checkPosts() error {
     // Check submissions for necessary actions.
     for _, post := range submissions {
         // Check for monthly competition post.
-        if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "competition") {
+        if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "competition") && !strings.Contains(post.Title, "winner") {
             if err := summonContestants(session, post); err != nil {
                 log.Printf("Failed to summon contestants to post %s: %v", post.Permalink, err)
                 return err
