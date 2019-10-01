@@ -2,7 +2,7 @@ package main
 
 import (
     "context"
-    "fmt"
+    "errors"
     "log"
     "net/http"
     "os"
@@ -19,9 +19,7 @@ import (
 
 const (
     redditClientId =     "Kkfhbwt2W5C0Rw"
-    redditClientSecret = "SECRET" // SECRET PASSWORD. DO NOT SHARE PUBLICLY.
     redditUsername =     "CrossStitchBot"
-    redditPassword =     "SECRET" // SECRET PASSWORD. DO NOT SHARE PUBLICLY.
 
     googleCloudProjectId =     "crossstitch-bot-1569769426365"
     googleCompetitionSheetId = "1sU7OwYp9kjF0vD1uXIactca6Z_RuD6AYh7g6O5v_CPM"
@@ -127,8 +125,14 @@ func summonContestants(session *geddit.OAuthSession, post *geddit.Submission) er
     return nil
 }
 
-func main() {
+// Fetches recent Reddit posts and acts on them as necessary.
+func checkPosts() error {
     // Authenticate with Reddit.
+    redditClientSecret := os.Getenv("REDDIT_CLIENT_SECRET")
+    if redditClientSecret == "" {
+        log.Print("REDDIT_CLIENT_SECRET not set")
+        return errors.New("REDDIT_CLIENT_SECRET not set")
+    }
     session, err := geddit.NewOAuthSession(
         redditClientId,
         redditClientSecret,
@@ -136,10 +140,17 @@ func main() {
         "redirect.url",
     )
     if err != nil {
-        log.Fatalf("Failed to create new Reddit OAuth session: %v", err)
+        log.Printf("Failed to create new Reddit OAuth session: %v", err)
+        return err
+    }
+    redditPassword := os.Getenv("REDDIT_PASSWORD")
+    if redditPassword == "" {
+        log.Print("REDDIT_PASSWORD not set")
+        return errors.New("REDDIT_PASSWORD not set")
     }
     if err = session.LoginAuth(redditUsername, redditPassword); err != nil {
-        log.Fatalf("Failed to authenticate with Reddit: %v", err)
+        log.Printf("Failed to authenticate with Reddit: %v", err)
+        return err
     }
 
     // Get r/CrossStitch submissions, sorted by new.
@@ -147,7 +158,8 @@ func main() {
         Limit: 10,
     })
     if err != nil {
-        log.Fatalf("Failed to list recent subreddit submissions: %v", err)
+        log.Printf("Failed to list recent subreddit submissions: %v", err)
+        return err
     }
 
     // Check submissions for necessary actions.
@@ -155,7 +167,8 @@ func main() {
         // Check for monthly competition post.
         if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "competition") {
             if err := summonContestants(session, post); err != nil {
-                log.Fatalf("Failed to summon contestants to post %s: %v", post.Permalink, err)
+                log.Printf("Failed to summon contestants to post %s: %v", post.Permalink, err)
+                return err
             }
         }
 
@@ -163,15 +176,19 @@ func main() {
     }
 
     log.Print("DONE")
+    return nil
+}
 
-
-
-    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-        fmt.Fprintln(w, "hello world")
-    })
-    port := os.Getenv("PORT")
-    if port == "" {
-        port = "8080"
+// HttpInvoke is the method that is invoked in Cloud Functions when an HTTP request is received.
+func HttpInvoke(http.ResponseWriter, *http.Request) {
+    if err := checkPosts(); err != nil {
+        log.Fatalf("Failed to process posts: %v", err)
     }
-    log.Fatal(http.ListenAndServe(":"+port, nil))
+}
+
+// main is the method that is invoked when running the program locally.
+func main() {
+    if err := checkPosts(); err != nil {
+        log.Fatalf("Failed to process posts: %v", err)
+    }
 }
