@@ -27,7 +27,7 @@ const (
 )
 
 // Build the contents of the Reddit comment that will summon challenge subscribers.
-func buildSummonString(ctx context.Context) (string, error) {
+func buildSummonString(ctx context.Context, useCreds bool) (string, error) {
     const (
         lastSubmissionIndex = 0 // A
         usernameIndex =       2 // C
@@ -35,10 +35,16 @@ func buildSummonString(ctx context.Context) (string, error) {
     )
 
     // Create an authenticated Google Sheets service.
-    sheetsService, err := sheets.NewService(ctx,
-        option.WithScopes(sheets.SpreadsheetsReadonlyScope),
-        option.WithCredentialsFile(googleCredentialsFile),
-    )
+    var sheetsService *sheets.Service
+    var err error
+    if useCreds {
+        sheetsService, err = sheets.NewService(ctx,
+            option.WithScopes(sheets.SpreadsheetsReadonlyScope),
+            option.WithCredentialsFile(googleCredentialsFile),
+        )
+    } else {
+        sheetsService, err = sheets.NewService(ctx, option.WithScopes(sheets.SpreadsheetsReadonlyScope))
+    }
     if err != nil {
         log.Printf("Failed to create Google Sheets service: %v", err)
         return "", err
@@ -84,15 +90,21 @@ func buildSummonString(ctx context.Context) (string, error) {
 }
 
 // Summons contestants to a Reddit competition post.
-func summonContestants(session *geddit.OAuthSession, post *geddit.Submission) error {
+func summonContestants(session *geddit.OAuthSession, post *geddit.Submission, useCreds bool) error {
     log.Printf("Summoning contestants to post %s!", post.Permalink)
     ctx := context.Background()
 
     // Create an authenticated Google Cloud Datastore client.
-    dsClient, err := datastore.NewClient(ctx,
-        googleCloudProjectId,
-        option.WithCredentialsFile(googleCredentialsFile),
-    )
+    var dsClient *datastore.Client
+    var err error
+    if useCreds {
+        dsClient, err = datastore.NewClient(ctx,
+            googleCloudProjectId,
+            option.WithCredentialsFile(googleCredentialsFile),
+        )
+    } else {
+        dsClient, err = datastore.NewClient(ctx, googleCloudProjectId)
+    }
     if err != nil {
         log.Printf("Failed to create a new Datastore client: %v", err)
         return err
@@ -112,7 +124,7 @@ func summonContestants(session *geddit.OAuthSession, post *geddit.Submission) er
     log.Print("Post has not been processed yet!")
 
     // Build the summon string from Google Sheets data.
-    text, err := buildSummonString(ctx)
+    text, err := buildSummonString(ctx, useCreds)
     if err != nil {
         return err
     }
@@ -133,7 +145,7 @@ func summonContestants(session *geddit.OAuthSession, post *geddit.Submission) er
 }
 
 // Fetches recent Reddit posts and acts on them as necessary.
-func checkPosts() error {
+func checkPosts(useCreds bool) error {
     // Authenticate with Reddit.
     redditClientSecret := os.Getenv("REDDIT_CLIENT_SECRET")
     if redditClientSecret == "" {
@@ -162,7 +174,7 @@ func checkPosts() error {
 
     // Get r/CrossStitch submissions, sorted by new.
     submissions, err := session.SubredditSubmissions("CrossStitch", geddit.NewSubmissions, geddit.ListingOptions{
-        Limit: 10,
+        Limit: 20,
     })
     if err != nil {
         log.Printf("Failed to list recent subreddit submissions: %v", err)
@@ -173,7 +185,7 @@ func checkPosts() error {
     for _, post := range submissions {
         // Check for monthly competition post.
         if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "competition") && !strings.Contains(post.Title, "winner") {
-            if err := summonContestants(session, post); err != nil {
+            if err := summonContestants(session, post, useCreds); err != nil {
                 log.Printf("Failed to summon contestants to post %s: %v", post.Permalink, err)
                 return err
             }
@@ -188,14 +200,14 @@ func checkPosts() error {
 
 // HttpInvoke is the method that is invoked in Cloud Functions when an HTTP request is received.
 func HttpInvoke(http.ResponseWriter, *http.Request) {
-    if err := checkPosts(); err != nil {
+    if err := checkPosts(false); err != nil {
         log.Fatalf("Failed to process posts: %v", err)
     }
 }
 
 // main is the method that is invoked when running the program locally.
 func main() {
-    if err := checkPosts(); err != nil {
+    if err := checkPosts(true); err != nil {
         log.Fatalf("Failed to process posts: %v", err)
     }
 }
