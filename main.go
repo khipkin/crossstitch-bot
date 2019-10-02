@@ -27,11 +27,13 @@ const (
 )
 
 // Build the contents of the Reddit comment that will summon challenge subscribers.
-func buildSummonString(ctx context.Context, useCreds bool) (string, error) {
+func buildSummonStrings(ctx context.Context, useCreds bool) ([]string, error) {
     const (
         lastSubmissionIndex = 0 // A
         usernameIndex =       2 // C
         subscribedIndex =     3 // D
+
+        maxRedditTagsPerComment = 3
     )
 
     // Create an authenticated Google Sheets service.
@@ -47,7 +49,7 @@ func buildSummonString(ctx context.Context, useCreds bool) (string, error) {
     }
     if err != nil {
         log.Printf("Failed to create Google Sheets service: %v", err)
-        return "", err
+        return nil, err
     }
 
     // Read the range of values from the spreadsheet.
@@ -55,12 +57,15 @@ func buildSummonString(ctx context.Context, useCreds bool) (string, error) {
     resp, err := sheetsService.Spreadsheets.Values.Get(googleCompetitionSheetId, readRange).Do()
     if err != nil {
         log.Printf("Unable to retrieve data from Google Sheet: %v", err)
-        return "", err
+        return nil, err
     }
 
     // Build the summon string.
-    text := "Summoning challenge contestants! Paging "
+    var summons = []string{}
+    var curr = ""
+    var seen = 0
     for i, row := range resp.Values {
+        // Process the values from the spreadsheet row.
         username := row[usernameIndex].(string)
         if !strings.HasPrefix(username, "u/") {
             // Skip rows with invalid usernames.
@@ -79,14 +84,26 @@ func buildSummonString(ctx context.Context, useCreds bool) (string, error) {
             log.Printf("Invalid boolean column %d, row %d: '%s'", subscribedIndex, i, row[subscribedIndex])
             continue
         }
+
+        // Build the summon string.
         if lastSubmission && subscribed {
-            if i != 0 {
-                text += ", "
+            if seen % maxRedditTagsPerComment == 0 {
+                curr = "Summoning contestants "
+            } else {
+                curr += ", "
             }
-            text = text + username
+            curr = curr + username
+            seen = seen + 1
+            if (seen % maxRedditTagsPerComment == 0 && seen > 0) {
+                summons = append(summons, curr)
+                seen = 0
+            }
         }
     }
-    return text, nil
+    if seen > 0 {
+        summons = append(summons, curr)
+    }
+    return summons, nil
 }
 
 // Summons contestants to a Reddit competition post.
@@ -123,17 +140,32 @@ func summonContestants(session *geddit.OAuthSession, post *geddit.Submission, us
     }
     log.Print("Post has not been processed yet!")
 
-    // Build the summon string from Google Sheets data.
-    text, err := buildSummonString(ctx, useCreds)
+    // Build the summon string from Google Sheets data. If there are no subscribed users, we're done.
+    summons, err := buildSummonStrings(ctx, useCreds)
     if err != nil {
         return err
     }
+    if len(summons) == 0 {
+        return nil
+    }
 
     // Comment on the competition post to summon the subscribed users.
-    log.Printf(text)
-    _, err = session.Reply(post, text)
+    mainCommentText := "This month's competition is live! Please submit your piece and/or vote for your favorite entries!\n\n" +
+        "To subscribe to future monthly competition posts, please fill out [this form](https://forms.gle/4seHL2YRRGTnT96E6)" +
+        " and our friendly robot will summon you. You may unsubscribe at any time using the same form!"
+    log.Print(mainCommentText)
+    mainComment, err := session.Reply(post, mainCommentText)
     if err != nil {
+        log.Printf("Failed to make parent Reddit comment on competition post: %v", err)
         return err
+    }
+    for _, summonText := range summons {
+        log.Printf("\t%s", summonText)
+        _, err = session.Reply(mainComment, summonText)
+        if err != nil {
+            log.Printf("Failed to make child Reddit comment on competition post: %v", err)
+            continue
+        }
     }
 
     // Record handling of this post.
