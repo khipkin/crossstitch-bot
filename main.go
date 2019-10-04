@@ -6,7 +6,6 @@ import (
     "log"
     "net/http"
     "os"
-    "strconv"
     "strings"
 
     "cloud.google.com/go/datastore"
@@ -29,9 +28,7 @@ const (
 // Build the contents of the Reddit comment that will summon challenge subscribers.
 func buildSummonStrings(ctx context.Context, useCreds bool) ([]string, error) {
     const (
-        lastSubmissionIndex = 0 // A
-        usernameIndex =       2 // C
-        subscribedIndex =     3 // D
+        usernameIndex = 0 // A
 
         maxRedditTagsPerComment = 3
     )
@@ -53,7 +50,7 @@ func buildSummonStrings(ctx context.Context, useCreds bool) ([]string, error) {
     }
 
     // Read the range of values from the spreadsheet.
-    readRange := "LastSubmit!A2:D"
+    readRange := "SignedUp!A2:A"
     resp, err := sheetsService.Spreadsheets.Values.Get(googleCompetitionSheetId, readRange).Do()
     if err != nil {
         log.Printf("Unable to retrieve data from Google Sheet: %v", err)
@@ -72,32 +69,18 @@ func buildSummonStrings(ctx context.Context, useCreds bool) ([]string, error) {
             log.Printf("Invalid Reddit username column %d, row %d: '%s'", usernameIndex, i, username)
             continue
         }
-        lastSubmission, err := strconv.ParseBool(row[lastSubmissionIndex].(string))
-        if err != nil {
-            // Skip rows with invalid bools.
-            log.Printf("Invalid boolean column %d, row %d: '%s'", lastSubmissionIndex, i, row[lastSubmissionIndex])
-            continue
-        }
-        subscribed, err := strconv.ParseBool(row[subscribedIndex].(string))
-        if err != nil {
-            // Skip rows with invalid bools.
-            log.Printf("Invalid boolean column %d, row %d: '%s'", subscribedIndex, i, row[subscribedIndex])
-            continue
-        }
 
         // Build the summon string.
-        if lastSubmission && subscribed {
-            if seen % maxRedditTagsPerComment == 0 {
-                curr = "Summoning contestants "
-            } else {
-                curr += ", "
-            }
-            curr = curr + username
-            seen = seen + 1
-            if (seen % maxRedditTagsPerComment == 0 && seen > 0) {
-                summons = append(summons, curr)
-                seen = 0
-            }
+        if seen % maxRedditTagsPerComment == 0 {
+            curr = "Summoning contestants "
+        } else {
+            curr += ", "
+        }
+        curr = curr + username
+        seen = seen + 1
+        if (seen % maxRedditTagsPerComment == 0 && seen > 0) {
+            summons = append(summons, curr)
+            seen = 0
         }
     }
     if seen > 0 {
