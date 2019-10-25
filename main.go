@@ -7,6 +7,7 @@ import (
     "net/http"
     "os"
     "strings"
+    "time"
 
     "cloud.google.com/go/datastore"
 
@@ -142,7 +143,9 @@ func summonContestants(session *geddit.OAuthSession, post *geddit.Submission, us
         log.Printf("Failed to make parent Reddit comment on competition post: %v", err)
         return err
     }
+    // To prevent Reddit rate limiting errors, wait ten seconds before each child comment.
     for _, summonText := range summons {
+        time.Sleep(10 * time.Second)
         log.Printf("\t%s", summonText)
         _, err = session.Reply(mainComment, summonText)
         if err != nil {
