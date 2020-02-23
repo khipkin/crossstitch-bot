@@ -202,7 +202,7 @@ func checkPosts(useCreds bool) error {
     // Check submissions for necessary actions.
     for _, post := range submissions {
         // Check for monthly competition post.
-        if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "'s competition") && !strings.Contains(post.Title, "winner") {
+        if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "competition") && !strings.Contains(post.Title, "winner") {
             if err := summonContestants(session, post, useCreds); err != nil {
                 log.Printf("Failed to summon contestants to post %s: %v", post.Permalink, err)
                 return err
