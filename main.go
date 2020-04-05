@@ -18,11 +18,11 @@ import (
 )
 
 const (
-	redditClientId = "Kkfhbwt2W5C0Rw"
+	redditClientID = "Kkfhbwt2W5C0Rw"
 	redditUsername = "CrossStitchBot"
 
-	googleCloudProjectId     = "crossstitch-bot-1569769426365"
-	googleCompetitionSheetId = "1BgsXzNY1L4cevQllAblDgCffO7DGNp0eOW4Bs1qbiMA"
+	googleCloudProjectID     = "crossstitch-bot-1569769426365"
+	googleCompetitionSheetID = "1BgsXzNY1L4cevQllAblDgCffO7DGNp0eOW4Bs1qbiMA"
 	googleCredentialsFile    = "crossstitch-bot-1569769426365-8302a8ad5d0d.json"
 )
 
@@ -52,7 +52,7 @@ func buildSummonStrings(ctx context.Context, useCreds bool) ([]string, error) {
 
 	// Read the range of values from the spreadsheet.
 	readRange := "SignedUp!A2:A"
-	resp, err := sheetsService.Spreadsheets.Values.Get(googleCompetitionSheetId, readRange).Do()
+	resp, err := sheetsService.Spreadsheets.Values.Get(googleCompetitionSheetID, readRange).Do()
 	if err != nil {
 		log.Printf("Unable to retrieve data from Google Sheet: %v", err)
 		return nil, err
@@ -100,11 +100,11 @@ func summonContestants(session *geddit.OAuthSession, post *geddit.Submission, us
 	var err error
 	if useCreds {
 		dsClient, err = datastore.NewClient(ctx,
-			googleCloudProjectId,
+			googleCloudProjectID,
 			option.WithCredentialsFile(googleCredentialsFile),
 		)
 	} else {
-		dsClient, err = datastore.NewClient(ctx, googleCloudProjectId)
+		dsClient, err = datastore.NewClient(ctx, googleCloudProjectID)
 	}
 	if err != nil {
 		log.Printf("Failed to create a new Datastore client: %v", err)
@@ -170,7 +170,7 @@ func checkPosts(useCreds bool) error {
 		return errors.New("REDDIT_CLIENT_SECRET not set")
 	}
 	session, err := geddit.NewOAuthSession(
-		redditClientId,
+		redditClientID,
 		redditClientSecret,
 		"gedditAgent v1",
 		"redirect.url",
