@@ -143,9 +143,7 @@ func summonContestants(session *geddit.OAuthSession, post *geddit.Submission, us
 		log.Printf("Failed to make parent Reddit comment on competition post: %v", err)
 		return err
 	}
-	// To prevent Reddit rate limiting errors, wait ten seconds before each child comment.
 	for _, summonText := range summons {
-		time.Sleep(10 * time.Second)
 		log.Printf("\t%s", summonText)
 		_, err = session.Reply(mainComment, summonText)
 		if err != nil {
@@ -189,6 +187,9 @@ func checkPosts(useCreds bool) error {
 		log.Printf("Failed to authenticate with Reddit: %v", err)
 		return err
 	}
+
+	// To prevent Reddit rate limiting errors, throttle requests.
+	session.Throttle(10 * time.Second)
 
 	// Get r/CrossStitch submissions, sorted by new.
 	submissions, err := session.SubredditSubmissions("CrossStitch", geddit.NewSubmissions, geddit.ListingOptions{
