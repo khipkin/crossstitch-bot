@@ -23,7 +23,7 @@ const (
 
 	googleCloudProjectID     = "crossstitch-bot-1569769426365"
 	googleCompetitionSheetID = "1BgsXzNY1L4cevQllAblDgCffO7DGNp0eOW4Bs1qbiMA"
-	googleCredentialsFile    = "crossstitch-bot-1569769426365-8302a8ad5d0d.json"
+	googleCredentialsFile    = "crossstitch-bot-1569769426365-8a98dfff4ceb.json"
 )
 
 // Build the contents of the Reddit comment that will summon challenge subscribers.
@@ -190,7 +190,7 @@ func checkPosts(useCreds bool) error {
 	}
 
 	// To prevent Reddit rate limiting errors, throttle requests.
-	session.Throttle(10 * time.Second)
+	session.Throttle(5 * time.Second)
 
 	// Get r/CrossStitch submissions, sorted by new.
 	submissions, err := session.SubredditSubmissions("CrossStitch", geddit.NewSubmissions, geddit.ListingOptions{
