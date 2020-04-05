@@ -124,6 +124,13 @@ func summonContestants(session *geddit.OAuthSession, post *geddit.Submission, us
 	}
 	log.Print("Post has not been processed yet!")
 
+	// Record handling of this post. This must be done before the actual handling, otherwise
+	// posts will be handled again if the function times out.
+	if _, err := dsClient.Put(ctx, postKey, &e); err != nil {
+		log.Printf("Failed to create Datastore entity to record handling of post: %v", err)
+		return err
+	}
+
 	// Build the summon string from Google Sheets data. If there are no subscribed users, we're done.
 	summons, err := buildSummonStrings(ctx, useCreds)
 	if err != nil {
@@ -150,12 +157,6 @@ func summonContestants(session *geddit.OAuthSession, post *geddit.Submission, us
 			log.Printf("Failed to make child Reddit comment on competition post: %v", err)
 			continue
 		}
-	}
-
-	// Record handling of this post.
-	if _, err := dsClient.Put(ctx, postKey, &e); err != nil {
-		log.Printf("Failed to create Datastore entity to record handling of post: %v", err)
-		return err
 	}
 	return nil
 }
