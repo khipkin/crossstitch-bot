@@ -142,15 +142,47 @@ func (s *summoner) summonContestants(ctx context.Context, post *geddit.Submissio
 	return nil
 }
 
-// Fetches recent Reddit posts and acts on them as necessary.
-func checkPosts(useCreds bool) error {
-	ctx := context.Background()
+func (s *summoner) handlePossibleCompetitionPost(ctx context.Context, post *geddit.Submission) error {
+	if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "competition") && !strings.Contains(post.Title, "winner") {
+		if err := s.summonContestants(ctx, post); err != nil {
+			log.Printf("Failed to summon contestants to post %s: %v", post.Permalink, err)
+			return err
+		}
+	}
+	return nil
+}
 
+// Fetches recent Reddit posts and acts on them as necessary.
+func (s *summoner) checkPosts(ctx context.Context) error {
+	// Get r/CrossStitch submissions, sorted by new.
+	submissions, err := s.redditSession.SubredditSubmissions("CrossStitch", geddit.NewSubmissions, geddit.ListingOptions{
+		Limit: 20,
+	})
+	if err != nil {
+		log.Printf("Failed to list recent subreddit submissions: %v", err)
+		return err
+	}
+
+	// Check submissions for necessary actions.
+	for _, post := range submissions {
+		// Check for monthly competition post.
+		if err := s.handlePossibleCompetitionPost(ctx, post); err != nil {
+			return err
+		}
+
+		// Add more checks here!
+	}
+
+	log.Print("DONE")
+	return nil
+}
+
+func setupSummoner(ctx context.Context, useCreds bool) (*summoner, error) {
 	// Authenticate with Reddit.
 	redditClientSecret := os.Getenv("REDDIT_CLIENT_SECRET")
 	if redditClientSecret == "" {
 		log.Print("REDDIT_CLIENT_SECRET not set")
-		return errors.New("REDDIT_CLIENT_SECRET not set")
+		return nil, errors.New("REDDIT_CLIENT_SECRET not set")
 	}
 	redditSession, err := geddit.NewOAuthSession(
 		redditClientID,
@@ -160,16 +192,16 @@ func checkPosts(useCreds bool) error {
 	)
 	if err != nil {
 		log.Printf("Failed to create new Reddit OAuth session: %v", err)
-		return err
+		return nil, err
 	}
 	redditPassword := os.Getenv("REDDIT_PASSWORD")
 	if redditPassword == "" {
 		log.Print("REDDIT_PASSWORD not set")
-		return errors.New("REDDIT_PASSWORD not set")
+		return nil, errors.New("REDDIT_PASSWORD not set")
 	}
 	if err = redditSession.LoginAuth(redditUsername, redditPassword); err != nil {
 		log.Printf("Failed to authenticate with Reddit: %v", err)
-		return err
+		return nil, err
 	}
 
 	// To prevent Reddit rate limiting errors, throttle requests.
@@ -187,7 +219,7 @@ func checkPosts(useCreds bool) error {
 	}
 	if err != nil {
 		log.Printf("Failed to create a new Datastore client: %v", err)
-		return err
+		return nil, err
 	}
 
 	// Create an authenticated Google Sheets service.
@@ -202,46 +234,32 @@ func checkPosts(useCreds bool) error {
 	}
 	if err != nil {
 		log.Printf("Failed to create Google Sheets service: %v", err)
-		return err
+		return nil, err
 	}
 
-	// Get r/CrossStitch submissions, sorted by new.
-	submissions, err := redditSession.SubredditSubmissions("CrossStitch", geddit.NewSubmissions, geddit.ListingOptions{
-		Limit: 20,
-	})
-	if err != nil {
-		log.Printf("Failed to list recent subreddit submissions: %v", err)
-		return err
-	}
-
-	// Check submissions for necessary actions.
-	s := newSummoner(redditSession, dsClient, sheetsService)
-	for _, post := range submissions {
-		// Check for monthly competition post.
-		if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "competition") && !strings.Contains(post.Title, "winner") {
-			if err := s.summonContestants(ctx, post); err != nil {
-				log.Printf("Failed to summon contestants to post %s: %v", post.Permalink, err)
-				return err
-			}
-		}
-
-		// Add more checks here!
-	}
-
-	log.Print("DONE")
-	return nil
+	return newSummoner(redditSession, dsClient, sheetsService), nil
 }
 
 // HttpInvoke is the method that is invoked in Cloud Functions when an HTTP request is received.
 func HttpInvoke(http.ResponseWriter, *http.Request) {
-	if err := checkPosts(false); err != nil {
+	ctx := context.Background()
+	s, err := setupSummoner(ctx, false)
+	if err != nil {
+		log.Fatalf("Failed to setup summoner: %v", err)
+	}
+	if err := s.checkPosts(ctx); err != nil {
 		log.Fatalf("Failed to process posts: %v", err)
 	}
 }
 
 // main is the method that is invoked when running the program locally.
 func main() {
-	if err := checkPosts(true); err != nil {
+	ctx := context.Background()
+	s, err := setupSummoner(ctx, true)
+	if err != nil {
+		log.Fatalf("Failed to setup summoner: %v", err)
+	}
+	if err := s.checkPosts(ctx); err != nil {
 		log.Fatalf("Failed to process posts: %v", err)
 	}
 }
