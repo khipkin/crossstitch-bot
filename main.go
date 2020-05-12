@@ -11,13 +11,14 @@ import (
 
 	"cloud.google.com/go/datastore"
 
-	"github.com/jzelinskie/geddit"
+	"github.com/khipkin/geddit"
 
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 )
 
 const (
+	subreddit      = "CrossStitch"
 	redditClientID = "Kkfhbwt2W5C0Rw"
 	redditUsername = "CrossStitchBot"
 
@@ -43,7 +44,7 @@ func newSummoner(redditSession *geddit.OAuthSession, datastoreClient *datastore.
 // Build the contents of the Reddit comment that will summon challenge subscribers.
 func (s *summoner) buildSummonStrings() ([]string, error) {
 	const (
-		usernameIndex = 0 // A
+		usernameIndex = 0 // Column A
 
 		maxRedditTagsPerComment = 3
 	)
@@ -92,26 +93,6 @@ func (s *summoner) buildSummonStrings() ([]string, error) {
 func (s *summoner) summonContestants(ctx context.Context, post *geddit.Submission) error {
 	log.Printf("Summoning contestants to post %s!", post.Permalink)
 
-	// Check if this post has already been handled. If so, we're done!
-	postKey := datastore.NameKey("Entity", post.ID, nil)
-	e := struct{}{}
-	if err := s.datastoreClient.Get(ctx, postKey, &e); err != datastore.ErrNoSuchEntity {
-		if err == nil {
-			log.Print("Post has already been processed!")
-			return nil
-		}
-		log.Printf("Error checking for existence of Datastore entity for post: %v", err)
-		return err
-	}
-	log.Print("Post has not been processed yet!")
-
-	// Record handling of this post. This must be done before the actual handling, otherwise
-	// posts will be handled again if the function times out.
-	if _, err := s.datastoreClient.Put(ctx, postKey, &e); err != nil {
-		log.Printf("Failed to create Datastore entity to record handling of post: %v", err)
-		return err
-	}
-
 	// Build the summon string from Google Sheets data. If there are no subscribed users, we're done.
 	summons, err := s.buildSummonStrings()
 	if err != nil {
@@ -144,6 +125,27 @@ func (s *summoner) summonContestants(ctx context.Context, post *geddit.Submissio
 
 func (s *summoner) handlePossibleCompetitionPost(ctx context.Context, post *geddit.Submission) error {
 	if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "competition") && !strings.Contains(post.Title, "winner") {
+		// Check if this post has already been handled. If so, we're done!
+		postKey := datastore.NameKey("Entity", post.ID, nil)
+		e := struct{}{}
+		if err := s.datastoreClient.Get(ctx, postKey, &e); err != datastore.ErrNoSuchEntity {
+			if err == nil {
+				log.Print("Post has already been processed!")
+				return nil
+			}
+			log.Printf("Error checking for existence of Datastore entity for post: %v", err)
+			return err
+		}
+		log.Print("Competition post has not been processed yet!")
+
+		// Record handling of this post. This must be done before the actual handling, otherwise
+		// posts will be handled again if the function times out.
+		if _, err := s.datastoreClient.Put(ctx, postKey, &e); err != nil {
+			log.Printf("Failed to create Datastore entity to record handling of post: %v", err)
+			return err
+		}
+
+		// Handle the post.
 		if err := s.summonContestants(ctx, post); err != nil {
 			log.Printf("Failed to summon contestants to post %s: %v", post.Permalink, err)
 			return err
@@ -154,8 +156,8 @@ func (s *summoner) handlePossibleCompetitionPost(ctx context.Context, post *gedd
 
 // Fetches recent Reddit posts and acts on them as necessary.
 func (s *summoner) checkPosts(ctx context.Context) error {
-	// Get r/CrossStitch submissions, sorted by new.
-	submissions, err := s.redditSession.SubredditSubmissions("CrossStitch", geddit.NewSubmissions, geddit.ListingOptions{
+	// Get submissions from the subreddit, sorted by new.
+	submissions, err := s.redditSession.SubredditSubmissions(subreddit, geddit.NewSubmissions, geddit.ListingOptions{
 		Limit: 20,
 	})
 	if err != nil {
@@ -187,7 +189,7 @@ func setupSummoner(ctx context.Context, useCreds bool) (*summoner, error) {
 	redditSession, err := geddit.NewOAuthSession(
 		redditClientID,
 		redditClientSecret,
-		"gedditAgent v1",
+		"gedditAgent v1 fork by khipkin",
 		"redirect.url",
 	)
 	if err != nil {
@@ -240,7 +242,7 @@ func setupSummoner(ctx context.Context, useCreds bool) (*summoner, error) {
 	return newSummoner(redditSession, dsClient, sheetsService), nil
 }
 
-// HttpInvoke is the method that is invoked in Cloud Functions when an HTTP request is received.
+// HttpInvoke is the method that is invoked in Google Cloud Functions when an HTTP request is received.
 func HttpInvoke(http.ResponseWriter, *http.Request) {
 	ctx := context.Background()
 	s, err := setupSummoner(ctx, false)
