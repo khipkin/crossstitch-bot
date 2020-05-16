@@ -25,33 +25,50 @@ const (
 	googleCloudProjectID     = "crossstitch-bot-1569769426365"
 	googleCompetitionSheetID = "1BgsXzNY1L4cevQllAblDgCffO7DGNp0eOW4Bs1qbiMA"
 	googleCredentialsFile    = "crossstitch-bot-1569769426365-8a98dfff4ceb.json"
+
+	maxRedditTagsPerComment = 3
 )
 
+type oAuthSession interface {
+	LoginAuth(username, password string) error
+	Reply(r geddit.Replier, comment string) (*geddit.Comment, error)
+	SubredditSubmissions(subreddit string, sort geddit.PopularitySort, params geddit.ListingOptions) ([]*geddit.Submission, error)
+	Throttle(interval time.Duration)
+}
+
+type datastoreClient interface {
+	Get(ctx context.Context, key *datastore.Key, dst interface{}) error
+	Put(ctx context.Context, key *datastore.Key, src interface{}) (*datastore.Key, error)
+}
+
 type summoner struct {
-	redditSession   *geddit.OAuthSession
-	datastoreClient *datastore.Client
-	sheetsService   *sheets.Service
+	redditSession             oAuthSession
+	datastoreClient           datastoreClient
+	sheetsService             *sheets.Service
+	readSpreadsheetValuesFunc func(string, string) (*sheets.ValueRange, error)
+}
+
+func (s *summoner) readSpreadsheetRange(spreadsheetID, readRange string) (*sheets.ValueRange, error) {
+	return s.sheetsService.Spreadsheets.Values.Get(spreadsheetID, readRange).Do()
 }
 
 func newSummoner(redditSession *geddit.OAuthSession, datastoreClient *datastore.Client, sheetsService *sheets.Service) *summoner {
-	return &summoner{
+	s := &summoner{
 		redditSession:   redditSession,
 		datastoreClient: datastoreClient,
 		sheetsService:   sheetsService,
 	}
+	s.readSpreadsheetValuesFunc = s.readSpreadsheetRange
+	return s
 }
 
 // Build the contents of the Reddit comment that will summon challenge subscribers.
 func (s *summoner) buildSummonStrings() ([]string, error) {
-	const (
-		usernameIndex = 0 // Column A
-
-		maxRedditTagsPerComment = 3
-	)
+	const usernameIndex = 0 // Column A
 
 	// Read the range of values from the spreadsheet.
 	readRange := "SignedUp!A2:A"
-	resp, err := s.sheetsService.Spreadsheets.Values.Get(googleCompetitionSheetID, readRange).Do()
+	resp, err := s.readSpreadsheetValuesFunc(googleCompetitionSheetID, readRange)
 	if err != nil {
 		log.Printf("Unable to retrieve data from Google Sheet: %v", err)
 		return nil, err
