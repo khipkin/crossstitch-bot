@@ -26,19 +26,29 @@ const (
 	googleCompetitionSheetID = "1BgsXzNY1L4cevQllAblDgCffO7DGNp0eOW4Bs1qbiMA"
 	googleCredentialsFile    = "crossstitch-bot-1569769426365-8a98dfff4ceb.json"
 
+	maxUsersPerSession      = 12
 	maxRedditTagsPerComment = 3
 )
+
+// PageToken for processing and tagging users on a competition post.
+type PageToken struct {
+	MainCommentFullID string
+	LastProcessedUser string
+}
 
 type oAuthSession interface {
 	LoginAuth(username, password string) error
 	Reply(r geddit.Replier, comment string) (*geddit.Comment, error)
 	SubredditSubmissions(subreddit string, sort geddit.PopularitySort, params geddit.ListingOptions) ([]*geddit.Submission, error)
 	Throttle(interval time.Duration)
+	Comment(fullID string) (*geddit.Comment, error)
 }
 
 type datastoreClient interface {
 	Get(ctx context.Context, key *datastore.Key, dst interface{}) error
+	GetAll(ctx context.Context, q *datastore.Query, dst interface{}) (keys []*datastore.Key, err error)
 	Put(ctx context.Context, key *datastore.Key, src interface{}) (*datastore.Key, error)
+	Delete(ctx context.Context, key *datastore.Key) error
 }
 
 type summoner struct {
@@ -63,24 +73,42 @@ func newSummoner(redditSession *geddit.OAuthSession, datastoreClient *datastore.
 }
 
 // Build the contents of the Reddit comment that will summon challenge subscribers.
-func (s *summoner) buildSummonStrings() ([]string, error) {
+// Return the list of comment strings and the last username processed, or else an error.
+func (s *summoner) buildSummonStrings(lastProccessedUser string) ([]string, string, error) {
 	const usernameIndex = 0 // Column A
 
 	// Read the range of values from the spreadsheet.
 	readRange := "SignedUp!A2:A"
 	resp, err := s.readSpreadsheetValuesFunc(googleCompetitionSheetID, readRange)
 	if err != nil {
-		log.Printf("Unable to retrieve data from Google Sheet: %v", err)
-		return nil, err
+		log.Printf("Unable to retrieve data from Google Sheets: %v", err)
+		return nil, "", err
 	}
 
-	// Build the summon string.
+	// If we are starting from a specific last processed user, first find that user's index.
+	firstIndexToProcess := 0
+	if lastProccessedUser != "" {
+		for i, row := range resp.Values {
+			if lastProccessedUser == row[usernameIndex].(string) {
+				firstIndexToProcess = i + 1
+				break
+			}
+		}
+	}
+
+	// Build the summon strings, starting from user after the last processed user, up to the max number of users per session.
+	var usersToProcess = firstIndexToProcess + maxUsersPerSession
+	if len(resp.Values) < usersToProcess {
+		usersToProcess = len(resp.Values)
+	}
 	var summons = []string{}
 	var curr = ""
 	var seen = 0
-	for i, row := range resp.Values {
+	var username = ""
+	for i := firstIndexToProcess; i < usersToProcess; i++ {
 		// Process the values from the spreadsheet row.
-		username := row[usernameIndex].(string)
+		row := resp.Values[i]
+		username = row[usernameIndex].(string)
 		if !strings.HasPrefix(username, "u/") {
 			// Skip rows with invalid usernames.
 			log.Printf("Invalid Reddit username column %d, row %d: '%s'", usernameIndex, i, username)
@@ -103,15 +131,27 @@ func (s *summoner) buildSummonStrings() ([]string, error) {
 	if seen > 0 {
 		summons = append(summons, curr)
 	}
-	return summons, nil
+	// If we finished processing returned users, return empty last user.
+	if len(resp.Values) == usersToProcess {
+		username = ""
+	}
+	return summons, username, nil
 }
 
 // Summons contestants to a Reddit competition post.
-func (s *summoner) summonContestants(ctx context.Context, post *geddit.Submission) error {
-	log.Printf("Summoning contestants to post %s!", post.FullID)
+func (s *summoner) summonContestants(ctx context.Context, post *geddit.Submission, pageToken *PageToken) error {
+	if pageToken != nil {
+		log.Printf("Summoning contestants under comment '%s' starting with %s!", pageToken.MainCommentFullID, pageToken.LastProcessedUser)
+	} else {
+		log.Printf("Summoning contestants to post '%s'!", post.FullID)
+	}
 
+	lpu := ""
+	if pageToken != nil {
+		lpu = pageToken.LastProcessedUser
+	}
 	// Build the summon string from Google Sheets data. If there are no subscribed users, we're done.
-	summons, err := s.buildSummonStrings()
+	summons, lastUser, err := s.buildSummonStrings(lpu)
 	if err != nil {
 		return err
 	}
@@ -119,16 +159,54 @@ func (s *summoner) summonContestants(ctx context.Context, post *geddit.Submissio
 		return nil
 	}
 
-	// Comment on the competition post to summon the subscribed users.
-	mainCommentText := "This month's competition is live! Please submit your piece and/or vote for your favorite entries!\n\n" +
-		"To subscribe to future monthly competition posts, please fill out [this form](https://forms.gle/4seHL2YRRGTnT96E6)" +
-		" and our friendly robot will summon you. You may unsubscribe at any time using the same form!"
-	log.Print(mainCommentText)
-	mainComment, err := s.redditSession.Reply(post, mainCommentText)
+	// If this is the first time processing this post, make the parent comment. Otherwise get the comment from the PageToken.
+	var mainCommentFullID = ""
+	if pageToken == nil {
+		// Make the main comment on which all users will be summoned.
+		mainCommentText := "This month's competition is live! Please submit your piece and/or vote for your favorite entries!\n\n" +
+			"To subscribe to future monthly competition posts, please fill out [this form](https://forms.gle/4seHL2YRRGTnT96E6)" +
+			" and our friendly robot will summon you. You may unsubscribe at any time using the same form!"
+		log.Print(mainCommentText)
+		mainComment, err := s.redditSession.Reply(post, mainCommentText)
+		if err != nil {
+			log.Printf("Failed to make parent Reddit comment on competition post: %v", err)
+			return err
+		}
+		mainCommentFullID = mainComment.FullID
+	} else {
+		mainCommentFullID = pageToken.MainCommentFullID
+	}
+
+	ptKey := datastore.NameKey("PageToken", post.FullID, nil)
+	if lastUser != "" {
+		// If not all users can be processed, write or update the PageToken to Datastore.
+		pt := &PageToken{
+			MainCommentFullID: mainCommentFullID,
+			LastProcessedUser: lastUser,
+		}
+		log.Printf("Saving PageToken with main comment id %s and last user %s", pt.MainCommentFullID, pt.LastProcessedUser)
+		if _, err := s.datastoreClient.Put(ctx, ptKey, pt); err != nil {
+			log.Printf("Failed to post PageToken to Datastore: %v", err)
+			return err
+		}
+	} else {
+		// If all users have been processed, delete the PageToken from Datastore.
+		if err := s.datastoreClient.Delete(ctx, ptKey); err != nil {
+			if err != datastore.ErrNoSuchEntity {
+				log.Printf("Failed to delete PageToken from Datastore: %v", err)
+				return err
+			}
+		}
+	}
+
+	// Get the main comment from Reddit so we can make child comments.
+	mainComment, err := s.redditSession.Comment(mainCommentFullID)
 	if err != nil {
-		log.Printf("Failed to make parent Reddit comment on competition post: %v", err)
+		log.Printf("Failed to fetch main comment from Reddit: %v", err)
 		return err
 	}
+
+	// Make the child comments on the original Reddit comment.
 	for _, summonText := range summons {
 		log.Printf("\t%s", summonText)
 		_, err = s.redditSession.Reply(mainComment, summonText)
@@ -142,8 +220,20 @@ func (s *summoner) summonContestants(ctx context.Context, post *geddit.Submissio
 
 func (s *summoner) handlePossibleCompetitionPost(ctx context.Context, post *geddit.Submission) error {
 	if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "competition") && !strings.Contains(post.Title, "winner") {
-		// Check if this post has already been handled. If so, we're done!
-		postKey := datastore.NameKey("Entity", post.FullID, nil)
+		// Check if this post is already in progress. If so, continue where we left off.
+		postKey := datastore.NameKey("PageToken", post.FullID, nil)
+		pt := PageToken{}
+		if err := s.datastoreClient.Get(ctx, postKey, &pt); err == nil {
+			log.Printf("Competition post processing in progress! Continuing with user %s!", pt.LastProcessedUser)
+			if err := s.summonContestants(ctx, post, &pt); err != nil {
+				log.Printf("Failed to continue summoning contestants to post %s: %v", post.FullID, err)
+				return err
+			}
+			return nil
+		}
+
+		// If the post is not in progress, check if this post has already been handled. If so, we're done!
+		postKey = datastore.NameKey("Entity", post.FullID, nil)
 		e := struct{}{}
 		if err := s.datastoreClient.Get(ctx, postKey, &e); err != datastore.ErrNoSuchEntity {
 			if err == nil {
@@ -163,7 +253,7 @@ func (s *summoner) handlePossibleCompetitionPost(ctx context.Context, post *gedd
 		}
 
 		// Handle the post.
-		if err := s.summonContestants(ctx, post); err != nil {
+		if err := s.summonContestants(ctx, post, nil /*PageToken*/); err != nil {
 			log.Printf("Failed to summon contestants to post %s: %v", post.FullID, err)
 			return err
 		}
@@ -171,9 +261,20 @@ func (s *summoner) handlePossibleCompetitionPost(ctx context.Context, post *gedd
 	return nil
 }
 
+func (s *summoner) handlePageToken(ctx context.Context, postID string, pt *PageToken) error {
+	log.Printf("Page token handling in progress! Continuing with user %s!", pt.LastProcessedUser)
+
+	// Get the reddit post
+	if err := s.summonContestants(ctx, &geddit.Submission{FullID: postID}, pt); err != nil {
+		log.Printf("Failed to continue summoning contestants to post '%s': %v", postID, err)
+		return err
+	}
+	return nil
+}
+
 // Fetches recent Reddit posts and acts on them as necessary.
 func (s *summoner) checkPosts(ctx context.Context) error {
-	// Get submissions from the subreddit, sorted by new.
+	// Get submissions from the subreddit, sorted by new, and process them.
 	submissions, err := s.redditSession.SubredditSubmissions(subreddit, geddit.NewSubmissions, geddit.ListingOptions{
 		Limit: 20,
 	})
@@ -181,8 +282,6 @@ func (s *summoner) checkPosts(ctx context.Context) error {
 		log.Printf("Failed to list recent subreddit submissions: %v", err)
 		return err
 	}
-
-	// Check submissions for necessary actions.
 	for _, post := range submissions {
 		// Check for monthly competition post.
 		if err := s.handlePossibleCompetitionPost(ctx, post); err != nil {
@@ -190,6 +289,18 @@ func (s *summoner) checkPosts(ctx context.Context) error {
 		}
 
 		// Add more checks here!
+	}
+
+	// Get PageToken entities from Datastore, and process them.
+	tokens := []*PageToken{}
+	keys, err := s.datastoreClient.GetAll(ctx, datastore.NewQuery("PageToken"), &tokens)
+	if err != nil {
+		log.Printf("Failed to list unresolved PageToken entities from Datastore: %v", err)
+	}
+	for i, key := range keys {
+		if err := s.handlePageToken(ctx, key.Name, tokens[i]); err != nil {
+			return err
+		}
 	}
 
 	log.Print("DONE")
