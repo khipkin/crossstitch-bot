@@ -97,7 +97,7 @@ func TestBuildSummonStringsSomeValuesNoRemainder(t *testing.T) {
 }
 
 func TestSummonContestantsNoUsers(t *testing.T) {
-	post := &geddit.Submission{ID: "12345"}
+	post := &geddit.Submission{FullID: "t3_12345"}
 	s := fakeSummoner(nil /*redditSubmissions*/, &sheets.ValueRange{Values: [][]interface{}{}})
 
 	if err := s.summonContestants(context.Background(), post); err != nil {
@@ -114,7 +114,7 @@ func TestSummonContestantsNoUsers(t *testing.T) {
 func TestSummonContestantsSomeUsers(t *testing.T) {
 	const numUsers = maxRedditTagsPerComment + 1
 	const expectedNumComments = 3 // main comment, 2 child comments
-	post := &geddit.Submission{ID: "12345"}
+	post := &geddit.Submission{FullID: "t3_12345"}
 	s := fakeSummoner(nil /*redditSubmissions*/, &sheets.ValueRange{Values: generateFakeUsers(numUsers)})
 
 	if err := s.summonContestants(context.Background(), post); err != nil {
@@ -130,7 +130,7 @@ func TestSummonContestantsSomeUsers(t *testing.T) {
 
 func TestHandlePossibleCompetitionPostWinnersPost(t *testing.T) {
 	const numUsers = maxRedditTagsPerComment + 1
-	post := &geddit.Submission{ID: "12345", Title: "[MOD] January's competition winners - more text"}
+	post := &geddit.Submission{FullID: "t3_12345", Title: "[MOD] January's competition winners - more text"}
 	s := fakeSummoner(nil /*redditSubmissions*/, &sheets.ValueRange{Values: generateFakeUsers(numUsers)})
 
 	if err := s.handlePossibleCompetitionPost(context.Background(), post); err != nil {
@@ -147,7 +147,7 @@ func TestHandlePossibleCompetitionPostWinnersPost(t *testing.T) {
 func TestHandlePossibleCompetitionPostNotHandledYet(t *testing.T) {
 	const numUsers = maxRedditTagsPerComment + 1
 	const expectedNumComments = 3 // main comment, 2 child comments
-	post := &geddit.Submission{ID: "12345", Title: "[MOD] January's competition - more text"}
+	post := &geddit.Submission{FullID: "t3_12345", Title: "[MOD] January's competition - more text"}
 	s := fakeSummoner(nil /*redditSubmissions*/, &sheets.ValueRange{Values: generateFakeUsers(numUsers)})
 
 	if err := s.handlePossibleCompetitionPost(context.Background(), post); err != nil {
@@ -164,10 +164,10 @@ func TestHandlePossibleCompetitionPostNotHandledYet(t *testing.T) {
 func TestHandlePossibleCompetitionPostAlreadyHandled(t *testing.T) {
 	const numUsers = maxRedditTagsPerComment + 1
 	ctx := context.Background()
-	post := &geddit.Submission{ID: "12345", Title: "[MOD] January's competition - more text"}
+	post := &geddit.Submission{FullID: "t3_12345", Title: "[MOD] January's competition - more text"}
 	s := fakeSummoner(nil /*redditSubmissions*/, &sheets.ValueRange{Values: generateFakeUsers(numUsers)})
 	val := struct{}{}
-	if _, err := s.datastoreClient.Put(ctx, datastore.NameKey("Entity", "12345", nil), &val); err != nil {
+	if _, err := s.datastoreClient.Put(ctx, datastore.NameKey("Entity", post.FullID, nil), &val); err != nil {
 		t.Fatalf("test failed to setup datastore state: %v", err)
 	}
 
@@ -186,8 +186,8 @@ func TestCheckPostsHandlesSeveralPosts(t *testing.T) {
 	const numUsers = maxRedditTagsPerComment + 1
 	const expectedNumComments = 6 // 2 * (main comment, 2 child comments)
 	submissions := []*geddit.Submission{
-		&geddit.Submission{ID: "12345", Title: "[MOD] January's competition - more text"},
-		&geddit.Submission{ID: "67890", Title: "[MOD] February's competition - more text"},
+		&geddit.Submission{FullID: "t3_12345", Title: "[MOD] January's competition - more text"},
+		&geddit.Submission{FullID: "t3_67890", Title: "[MOD] February's competition - more text"},
 	}
 	s := fakeSummoner(submissions, &sheets.ValueRange{Values: generateFakeUsers(numUsers)})
 

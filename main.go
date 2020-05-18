@@ -143,7 +143,7 @@ func (s *summoner) summonContestants(ctx context.Context, post *geddit.Submissio
 func (s *summoner) handlePossibleCompetitionPost(ctx context.Context, post *geddit.Submission) error {
 	if strings.HasPrefix(post.Title, "[MOD]") && strings.Contains(post.Title, "competition") && !strings.Contains(post.Title, "winner") {
 		// Check if this post has already been handled. If so, we're done!
-		postKey := datastore.NameKey("Entity", post.ID, nil)
+		postKey := datastore.NameKey("Entity", post.FullID, nil)
 		e := struct{}{}
 		if err := s.datastoreClient.Get(ctx, postKey, &e); err != datastore.ErrNoSuchEntity {
 			if err == nil {
