@@ -193,8 +193,8 @@ func TestSummonContestantsSomeUsers(t *testing.T) {
 }
 
 func TestSummonContestantsMoreThanMaxUsers(t *testing.T) {
-	const numUsers = maxUsersPerSession + 1
-	expectedNumComments := (numUsers / maxRedditTagsPerComment) + 1 // main comment, 10 child comments
+	const numUsers = maxUsersPerSession*2 + 1
+	expectedNumComments := maxUsersPerSession/maxRedditTagsPerComment + 1 // main comment, maxUsersPerSession/maxRedditTagsPerComment child comments
 	ctx := context.Background()
 	post := &geddit.Submission{FullID: "t3_12345"}
 	s := fakeSummoner(nil /*redditSubmissions*/, &sheets.ValueRange{Values: generateFakeUsers(numUsers)})
@@ -219,11 +219,30 @@ func TestSummonContestantsMoreThanMaxUsers(t *testing.T) {
 		t.Fatalf("summonContestants wrote pagetoken with wrong LastProcessedUser (got: %s, want: %s)", pt.LastProcessedUser, expectedLastProcessedUser)
 	}
 
-	// Summon the last (second) batch of contestants.
+	// Summon the second batch of contestants.
 	if err := s.summonContestants(ctx, post, pt); err != nil {
 		t.Fatalf("summonContestants call failed: %v", err)
 	}
 
+	expectedLastProcessedUser = fakeUserName(maxUsersPerSession*2 - 1)
+	expectedNumComments += maxUsersPerSession / maxRedditTagsPerComment
+	if fsr.numComments != expectedNumComments {
+		t.Fatalf("summonContestants made unexpected number of comments (got: %d, want: %d)", fsr.numComments, expectedNumComments)
+	}
+	// Make sure correct page token was written to Datastore.
+	if err := s.datastoreClient.Get(ctx, datastore.NameKey("PageToken", post.FullID, nil), pt); err != nil {
+		t.Fatalf("failed to fetch pagetoken from datastore: %v", err)
+	}
+	if pt.LastProcessedUser != expectedLastProcessedUser {
+		t.Fatalf("summonContestants wrote pagetoken with wrong LastProcessedUser (got: %s, want: %s)", pt.LastProcessedUser, expectedLastProcessedUser)
+	}
+
+	// Summon the third (last) batch of contestants.
+	if err := s.summonContestants(ctx, post, pt); err != nil {
+		t.Fatalf("summonContestants call failed: %v", err)
+	}
+
+	expectedLastProcessedUser = fakeUserName(maxUsersPerSession * 2)
 	expectedNumComments = expectedNumComments + 1
 	if fsr.numComments != expectedNumComments {
 		t.Fatalf("summonContestants made unexpected number of comments (got: %d, want: %d)", fsr.numComments, expectedNumComments)
@@ -234,7 +253,7 @@ func TestSummonContestantsMoreThanMaxUsers(t *testing.T) {
 	}
 }
 
-func TestHandlePossibleCompetitionPostWinnersPost(t *testing.T) {
+func TestHandlePossibleCompetitionPostIgnoresWinnersPost(t *testing.T) {
 	const numUsers = maxRedditTagsPerComment + 1
 	post := &geddit.Submission{FullID: "t3_12345", Title: "[MOD] January's competition winners - more text"}
 	s := fakeSummoner(nil /*redditSubmissions*/, &sheets.ValueRange{Values: generateFakeUsers(numUsers)})
