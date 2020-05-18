@@ -108,7 +108,7 @@ func (s *summoner) buildSummonStrings() ([]string, error) {
 
 // Summons contestants to a Reddit competition post.
 func (s *summoner) summonContestants(ctx context.Context, post *geddit.Submission) error {
-	log.Printf("Summoning contestants to post %s!", post.Permalink)
+	log.Printf("Summoning contestants to post %s!", post.FullID)
 
 	// Build the summon string from Google Sheets data. If there are no subscribed users, we're done.
 	summons, err := s.buildSummonStrings()
@@ -164,7 +164,7 @@ func (s *summoner) handlePossibleCompetitionPost(ctx context.Context, post *gedd
 
 		// Handle the post.
 		if err := s.summonContestants(ctx, post); err != nil {
-			log.Printf("Failed to summon contestants to post %s: %v", post.Permalink, err)
+			log.Printf("Failed to summon contestants to post %s: %v", post.FullID, err)
 			return err
 		}
 	}
