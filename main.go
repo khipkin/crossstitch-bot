@@ -41,7 +41,7 @@ type oAuthSession interface {
 	Reply(r geddit.Replier, comment string) (*geddit.Comment, error)
 	SubredditSubmissions(subreddit string, sort geddit.PopularitySort, params geddit.ListingOptions) ([]*geddit.Submission, error)
 	Throttle(interval time.Duration)
-	Comment(fullID string) (*geddit.Comment, error)
+	Comment(subreddit, fullID string) (*geddit.Comment, error)
 }
 
 type datastoreClient interface {
@@ -161,13 +161,15 @@ func (s *summoner) summonContestants(ctx context.Context, post *geddit.Submissio
 
 	// If this is the first time processing this post, make the parent comment. Otherwise get the comment from the PageToken.
 	var mainCommentFullID = ""
+	var mainComment *geddit.Comment
 	if pageToken == nil {
 		// Make the main comment on which all users will be summoned.
 		mainCommentText := "This month's competition is live! Please submit your piece and/or vote for your favorite entries!\n\n" +
 			"To subscribe to future monthly competition posts, please fill out [this form](https://forms.gle/4seHL2YRRGTnT96E6)" +
 			" and our friendly robot will summon you. You may unsubscribe at any time using the same form!"
 		log.Print(mainCommentText)
-		mainComment, err := s.redditSession.Reply(post, mainCommentText)
+		var err error
+		mainComment, err = s.redditSession.Reply(post, mainCommentText)
 		if err != nil {
 			log.Printf("Failed to make parent Reddit comment on competition post: %v", err)
 			return err
@@ -175,6 +177,15 @@ func (s *summoner) summonContestants(ctx context.Context, post *geddit.Submissio
 		mainCommentFullID = mainComment.FullID
 	} else {
 		mainCommentFullID = pageToken.MainCommentFullID
+	}
+
+	// If we don't already have it, get the main comment from Reddit so we can make child comments.
+	if mainComment == nil {
+		mainComment, err = s.redditSession.Comment(subreddit, mainCommentFullID)
+		if err != nil {
+			log.Printf("Failed to fetch main comment from Reddit: %v", err)
+			return err
+		}
 	}
 
 	ptKey := datastore.NameKey("PageToken", post.FullID, nil)
@@ -197,13 +208,6 @@ func (s *summoner) summonContestants(ctx context.Context, post *geddit.Submissio
 				return err
 			}
 		}
-	}
-
-	// Get the main comment from Reddit so we can make child comments.
-	mainComment, err := s.redditSession.Comment(mainCommentFullID)
-	if err != nil {
-		log.Printf("Failed to fetch main comment from Reddit: %v", err)
-		return err
 	}
 
 	// Make the child comments on the original Reddit comment.

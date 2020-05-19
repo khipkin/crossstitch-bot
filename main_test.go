@@ -26,7 +26,7 @@ func (frs *fakeRedditSession) SubredditSubmissions(subreddit string, sort geddit
 	return frs.submittions, nil
 }
 func (frs *fakeRedditSession) Throttle(interval time.Duration) {}
-func (frs *fakeRedditSession) Comment(fullID string) (*geddit.Comment, error) {
+func (frs *fakeRedditSession) Comment(subreddit, fullID string) (*geddit.Comment, error) {
 	return &geddit.Comment{FullID: fullID}, nil
 }
 
