@@ -24,7 +24,7 @@ const (
 
 	googleCloudProjectID     = "crossstitch-bot-1569769426365"
 	googleCompetitionSheetID = "1BgsXzNY1L4cevQllAblDgCffO7DGNp0eOW4Bs1qbiMA"
-	googleCredentialsFile    = "crossstitch-bot-1569769426365-8a98dfff4ceb.json"
+	googleCredentialsFile    = "crossstitch-bot-1569769426365-7aaa0bc7606d.json"
 
 	maxUsersPerSession      = 12
 	maxRedditTagsPerComment = 3
