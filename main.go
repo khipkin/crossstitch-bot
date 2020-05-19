@@ -374,8 +374,8 @@ func setupSummoner(ctx context.Context, useCreds bool) (*summoner, error) {
 	return newSummoner(redditSession, dsClient, sheetsService), nil
 }
 
-// HttpInvoke is the method that is invoked in Google Cloud Functions when an HTTP request is received.
-func HttpInvoke(http.ResponseWriter, *http.Request) {
+// HTTPInvoke is the method that is invoked in Google Cloud Functions when an HTTP request is received.
+func HTTPInvoke(http.ResponseWriter, *http.Request) {
 	ctx := context.Background()
 	s, err := setupSummoner(ctx, false)
 	if err != nil {
