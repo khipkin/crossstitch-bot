@@ -1,2 +1,7 @@
 
+# Google Cloud Platform credentials file
 crossstitch-bot-1569769426365-7aaa0bc7606d.json
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
